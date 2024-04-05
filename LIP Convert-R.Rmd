@@ -5,7 +5,7 @@ date: "2024-04-04"
 output: html_document
 ---
 
-# LIP Convert-R (ANPC LIP --> LIPIDOME-R) 
+#1. LIP Convert-R (ANPC LIP --> LIPIDOME-R) 
 ```{r setup, include=TRUE}
 
 library(dplyr)
@@ -119,7 +119,6 @@ duplicated_values <- names(value_counts[value_counts > 1])
 # Print duplicated values
 print(duplicated_values)
 
-
 # Preallocate cleaned_df
 cleaned_df <- data.frame(matrix(nrow = nrow(ANPCdf), ncol = 0))
 
@@ -163,10 +162,13 @@ lipids <- colnames(sorted_df[,10:ncol(sorted_df)])
 rm(empty_rows,first_9_rows, lipidnames, matching_cols, new_rows, class_name, classes_to_replace_1, classes_to_replace_2, classes_to_replace_3, col, dup_val, duplicated_values, first_9_colnames, first_row, mask, new_colnames, row_sums, value_counts, generate_new_string, modify_name)
 ```
 
-#Lipidome-R (WIP)
+#2. LIPIDOME-R (WIP)
 ```{r}
 
-install.packages("lipidomeR")
+if (!require("lipidomeR", quietly = TRUE)) {
+  install.packages("lipidomeR")
+}
+
 library("lipidomeR")
 library(ggplot2)
 
