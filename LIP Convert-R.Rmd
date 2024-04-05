@@ -160,12 +160,7 @@ sorted_df <- cbind(ANPCdf[, 1:9], cleaned_df)
 
 lipids <- colnames(sorted_df[,10:ncol(sorted_df)])
 
-ANPCdf_long <- sorted_df %>% 
-  pivot_longer(cols = 10:ncol(sorted_df), names_to = "Name", values_to = "value")
-
-ANPCdf_long$Name <- as.factor(ANPCdf_long$Name)
-ANPCdf_long$value <- as.numeric(ANPCdf_long$value)
-
+rm(empty_rows,first_9_rows, lipidnames, matching_cols, new_rows, class_name, classes_to_replace_1, classes_to_replace_2, classes_to_replace_3, col, dup_val, duplicated_values, first_9_colnames, first_row, mask, new_colnames, row_sums, value_counts, generate_new_string, modify_name)
 ```
 
 #Lipidome-R (WIP)
@@ -175,33 +170,42 @@ install.packages("lipidomeR")
 library("lipidomeR")
 library(ggplot2)
 
+#long_df
+
+sorted_df_long <- sorted_df %>% 
+  pivot_longer(cols = 10:ncol(sorted_df), names_to = "Name", values_to = "value")
+
+sorted_df_long$Name <- as.factor(sorted_df_long$Name)
+sorted_df_long$value <- as.numeric(sorted_df_long$value)
+
+
 # Transform the concentrations into log-10 scale.
 
-ANPCdf_long$'Concentration_plus1' <- ANPCdf_long$value + 1
+sorted_df_long$'Concentration_plus1' <- sorted_df_long$value + 1
 
-ANPCdf_long$'Concentration_log10_umol_per_mL' <-
-   log10(ANPCdf_long$Concentration_plus1)
+sorted_df_long$'Concentration_log10_umol_per_mL' <-
+   log10(sorted_df_long$Concentration_plus1)
 
-names.mapping <- map_lipid_names(x = unique(ANPCdf_long$Name))
+names.mapping <- map_lipid_names(x = unique(sorted_df_long$Name))
 
-library(ggplot2)
+
 
 #LOG HEATMAP
 
 heatmap_lipidome(
-   x = ANPCdf_long[ , c( "Name", "Concentration_log10_umol_per_mL" ) ],
+   x = sorted_df_long[ , c( "Name", "Concentration_log10_umol_per_mL" ) ],
    names.mapping = names.mapping,
    class.facet = "wrap",
    x.names = "Name",
    fill.limits =
        range(
-           x = ANPCdf_long$"Concentration_log10_umol_per_mL",
+           x = sorted_df_long$"Concentration_log10_umol_per_mL",
            na.rm = TRUE
        ),
    fill.midpoint =
        sum(
            range(
-               x = ANPCdf_long$"Concentration_log10_umol_per_mL",
+               x = sorted_df_long$"Concentration_log10_umol_per_mL",
                na.rm = TRUE
            )
        ) / 2,
@@ -212,19 +216,19 @@ heatmap_lipidome(
 # #non-log QC-checkR HEATMAP
 # 
 # heatmap_lipidome(
-#    x = ANPCdf_long[ , c( "Name", "value" ) ],
+#    x = sorted_df_long[ , c( "Name", "value" ) ],
 #    names.mapping = names.mapping,
 #    class.facet = "wrap",
 #    x.names = "Name",
 #    fill.limits =
 #        range(
-#            x = ANPCdf_long$"value",
+#            x = sorted_df_long$"value",
 #            na.rm = TRUE
 #        ),
 #    fill.midpoint =
 #        sum(
 #            range(
-#                x = ANPCdf_long$"value",
+#                x = sorted_df_long$"value",
 #                na.rm = TRUE
 #            )
 #        ) / 2,
@@ -234,25 +238,25 @@ heatmap_lipidome(
 
 
 
-# Convert the data into wide format, where each lipid is one column and each sample is one row and ompute the regression models.
+# Convert the data into wide format, where each lipid is one column and each sample is one row and compute the regression models.
 
-ANPCdf_wide <-
+sorted_df_wide <-
    tidyr::pivot_wider(
-       data = ANPCdf_long[,-c(12,13)],
+       data = sorted_df_long[,-c(12,13)],
        names_from = "Name",
        values_from = "value"
    )
 
 
-ANPCdf_wide$sample_type <- factor(ANPCdf_wide$sample_type, levels = c("sample", "qc"))
+sorted_df_wide$sample_type <- factor(sorted_df_wide$sample_type, levels = c("sample", "qc"))
 
 
 names.mapping <-
-   map_lipid_names( x = unique(ANPCdf_long$"Name"))
+   map_lipid_names( x = unique(sorted_df_long$"Name"))
 
 result.limma <-
    compute_models_with_limma(
-       x = ANPCdf_wide,
+       x = sorted_df_wide,
        dependent.variables = names.mapping$Name,
        independent.variables = c("sample_type")##EDIT THIS ON GROUPS WANTED
    )
@@ -300,19 +304,19 @@ print( figure.output[[ "sample_typeqc" ]] )
 
 # Compute the regression models.
 
-ANPCdf_wide <-
+sorted_df_wide <-
    tidyr::pivot_wider(
-       data = ANPCdf_long[,-c(12,13)],
+       data = sorted_df_long[,-c(12,13)],
        names_from = "Name",
        values_from = "value"
    )
 
 names.mapping <-
-   map_lipid_names( x = unique(ANPCdf_long$"Name"))
+   map_lipid_names( x = unique(sorted_df_long$"Name"))
 
 result.limma <-
    compute_models_with_limma(
-       x = ANPCdf_wide,
+       x = sorted_df_wide,
        dependent.variables = names.mapping$"Name",
        independent.variables = c("sample_type"),##EDIT THIS ON GROUPS WANTED
        F.test = TRUE # Compute an F-test for a factor variable.
