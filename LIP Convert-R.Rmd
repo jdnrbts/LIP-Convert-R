@@ -1,0 +1,443 @@
+---
+title: "LIP Convert-R"
+author: "JLR"
+date: "2024-04-04"
+output: html_document
+---
+
+# LIP Convert-R (ANPC LIP --> LIPIDOME-R) 
+```{r setup, include=TRUE}
+
+library(dplyr)
+library(tidyverse)
+
+#Load in qcCheckR file after running Luke's script
+ANPCdf <- read.csv(file.choose())
+
+lipidnames <- data.frame(colnames(ANPCdf[10:ncol(ANPCdf)]))
+
+colnames(lipidnames)[1] <- "Name"
+
+lipidnames$class <- gsub("[^a-zA-Z]", "", lipidnames$Name)
+
+lipidnames$class <- gsub("TAGFA","TAG", lipidnames$class)
+
+#subclasses for "(:)"
+classes_to_replace_1 <- c("CE", "CER", "LCER", "HCER", "DCER", "LPS", "LPI", "LPG", "LPE", "LPC", "FFA", "SM", "MAG")
+
+for (class_name in classes_to_replace_1) {
+  mask <- grepl(class_name, lipidnames$Name)
+  lipidnames$Name[mask] <- gsub("\\.(\\d+)\\.(\\d+)\\.", paste0("(", "\\1:", "\\2", ")"), lipidnames$Name[mask])
+}
+
+#subclasses for "chain addition" then "(:)"
+##remove FA from TAG
+classes_to_replace_2 <- "TAG"
+
+for (class_name in classes_to_replace_2) {
+  mask <- grepl(class_name, lipidnames$Name)
+  lipidnames$Name[mask] <- gsub("_FA", "_", lipidnames$Name[mask])
+}
+
+##change ".d" to "d." for LCERd and HCERd
+library(stringr)
+
+modify_name <- function(name, class) {
+  if (class %in% c("HCERd", "LCERd")) {
+    name <- str_replace(name, "\\.d", "d.")
+  }
+  return(name)
+}
+
+lipidnames$Name <- mapply(modify_name, lipidnames$Name, lipidnames$class)
+
+##change "_" to "."
+classes_to_replace_3 <- c("DAG", "HCERd", "LCERd", "PC", "PE", "PEP","PEO", "PG", "PI", "PS", "TAG")
+
+for (class_name in classes_to_replace_3) {
+  mask <- grepl(class_name, lipidnames$Name)
+  lipidnames$Name[mask] <- gsub("_", ".", lipidnames$Name[mask])
+}
+
+# Function to generate the new strings based on class and numbers
+generate_new_string <- function(name, class) {
+  if (class %in% c("DAG", "HCERd", "LCERd", "PC", "PE", "PEP","PEO", "PG", "PI", "PS", "TAG")) {
+    # Extracting numbers
+    numbers <- as.numeric(unlist(str_extract_all(name, "\\d+")))
+    # Calculating sums
+    sum1 <- numbers[1] + numbers[3]
+    sum2 <- numbers[2] + numbers[4]
+    # Creating the new string
+    new_string <- paste(class, "(", sum1, ":", sum2, ")", sep = "")
+    return(new_string)
+  } else {
+    return(name)
+  }
+}
+
+# Apply the function to the dataframe
+lipidnames$Name <- mapply(generate_new_string, lipidnames$Name, lipidnames$class)
+
+# Create an empty dataframe with the desired number of rows
+empty_rows <- data.frame(matrix(ncol = ncol(lipidnames), nrow = 9))
+colnames(empty_rows) <- colnames(lipidnames)  # Assuming lipidnames is your original dataframe
+
+# Combine the empty rows with your original dataframe
+lipidnames <- rbind(empty_rows, lipidnames)
+
+# Extracting the first 9 column names from ANPCdf
+first_9_colnames <- colnames(ANPCdf)[1:9]
+
+# Creating a data frame with the extracted column names
+new_rows <- data.frame(Name = first_9_colnames, class = rep(NA, length(first_9_colnames)))
+
+# Extracting the first 9 rows of lipidnames
+first_9_rows <- lipidnames[1:9, ]
+
+# Updating the 'Name' and 'class' columns with values from new_rows
+first_9_rows$Name <- new_rows$Name
+first_9_rows$class <- new_rows$class
+
+# Updating the first 9 rows of lipidnames with the modified first_9_rows
+lipidnames[1:9, ] <- first_9_rows
+
+# Replace column names with the values in the first column of lipidnames$Name
+new_colnames <- as.character(lipidnames$Name)
+
+# Add new row to ANPCdf with new column names
+ANPCdf <- rbind(new_colnames, ANPCdf)
+
+# Get the first row of ANPCdf
+first_row <- as.character(ANPCdf[1, ])
+
+# Count occurrences of each value
+value_counts <- table(first_row)
+
+# Extract duplicated values
+duplicated_values <- names(value_counts[value_counts > 1])
+
+# Print duplicated values
+print(duplicated_values)
+
+
+# Preallocate cleaned_df
+cleaned_df <- data.frame(matrix(nrow = nrow(ANPCdf), ncol = 0))
+
+# Loop through each column in ANPCdf
+for (col in names(ANPCdf)[10:length(names(ANPCdf))]) {
+  # Check if the value in the first row of the current column is not equal to duplicated_values
+  if (!ANPCdf[1, col] %in% duplicated_values)  {
+    # Add the column to the temporary dataframe
+    cleaned_df <- cbind(cleaned_df, ANPCdf[, col])  
+  } else {
+    # Extract duplicated values
+    dup_val <- ANPCdf[1, col]
+    
+    # Subset columns where the value matches the duplicated value
+    matching_cols <- ANPCdf %>%
+  select(where(~.x[1] == dup_val)) %>%
+  slice(-1) %>%
+  as.data.frame()
+    
+    matching_cols <- as.data.frame(lapply(matching_cols, as.numeric))
+    
+    # Calculate row sums
+    row_sums <- rowSums(matching_cols)
+    
+    row_sums<- c(dup_val, row_sums)
+    
+    # Add the summed column to cleaned_df
+    cleaned_df[[paste0("Column_", dup_val)]] <- row_sums
+  }
+}
+
+colnames(cleaned_df) <- cleaned_df[1,]
+
+cleaned_df <- cleaned_df[-1,]
+ANPCdf <- ANPCdf[-1,]
+
+sorted_df <- cbind(ANPCdf[, 1:9], cleaned_df)
+
+lipids <- colnames(sorted_df[,10:ncol(sorted_df)])
+
+ANPCdf_long <- sorted_df %>% 
+  pivot_longer(cols = 10:ncol(sorted_df), names_to = "Name", values_to = "value")
+
+ANPCdf_long$Name <- as.factor(ANPCdf_long$Name)
+ANPCdf_long$value <- as.numeric(ANPCdf_long$value)
+
+```
+
+#Lipidome-R (WIP)
+```{r}
+
+install.packages("lipidomeR")
+library("lipidomeR")
+library(ggplot2)
+
+# Transform the concentrations into log-10 scale.
+
+ANPCdf_long$'Concentration_plus1' <- ANPCdf_long$value + 1
+
+ANPCdf_long$'Concentration_log10_umol_per_mL' <-
+   log10(ANPCdf_long$Concentration_plus1)
+
+names.mapping <- map_lipid_names(x = unique(ANPCdf_long$Name))
+
+library(ggplot2)
+
+#LOG HEATMAP
+
+heatmap_lipidome(
+   x = ANPCdf_long[ , c( "Name", "Concentration_log10_umol_per_mL" ) ],
+   names.mapping = names.mapping,
+   class.facet = "wrap",
+   x.names = "Name",
+   fill.limits =
+       range(
+           x = ANPCdf_long$"Concentration_log10_umol_per_mL",
+           na.rm = TRUE
+       ),
+   fill.midpoint =
+       sum(
+           range(
+               x = ANPCdf_long$"Concentration_log10_umol_per_mL",
+               na.rm = TRUE
+           )
+       ) / 2,
+   melt.value.name = "Concentration_log10_umol_per_mL",
+   scales = "free"
+)
+
+# #non-log QC-checkR HEATMAP
+# 
+# heatmap_lipidome(
+#    x = ANPCdf_long[ , c( "Name", "value" ) ],
+#    names.mapping = names.mapping,
+#    class.facet = "wrap",
+#    x.names = "Name",
+#    fill.limits =
+#        range(
+#            x = ANPCdf_long$"value",
+#            na.rm = TRUE
+#        ),
+#    fill.midpoint =
+#        sum(
+#            range(
+#                x = ANPCdf_long$"value",
+#                na.rm = TRUE
+#            )
+#        ) / 2,
+#    melt.value.name = "value",
+#    scales = "free"
+# )
+
+
+
+# Convert the data into wide format, where each lipid is one column and each sample is one row and ompute the regression models.
+
+ANPCdf_wide <-
+   tidyr::pivot_wider(
+       data = ANPCdf_long[,-c(12,13)],
+       names_from = "Name",
+       values_from = "value"
+   )
+
+
+ANPCdf_wide$sample_type <- factor(ANPCdf_wide$sample_type, levels = c("sample", "qc"))
+
+
+names.mapping <-
+   map_lipid_names( x = unique(ANPCdf_long$"Name"))
+
+result.limma <-
+   compute_models_with_limma(
+       x = ANPCdf_wide,
+       dependent.variables = names.mapping$Name,
+       independent.variables = c("sample_type")##EDIT THIS ON GROUPS WANTED
+   )
+
+# Create the figure of all lipids and factors.
+
+figure.output <-
+   heatmap_lipidome_from_limma(
+       x = result.limma$"model",
+       names.mapping = names.mapping,
+       axis.x.carbons = FALSE,
+       class.facet = "row",
+       plot.all = TRUE,
+       plot.individual = FALSE,
+       print.figure = TRUE,
+       scales = "free",
+       space = "free"
+   )
+
+# Create factor-specific figures.
+
+figure.output <-
+   heatmap_lipidome_from_limma(
+       x = result.limma$"model",
+       names.mapping = names.mapping,
+       axis.x.carbons = FALSE,
+       class.facet = "wrap",
+       omit.class = "CE",
+       plot.all = FALSE,
+       plot.individual = TRUE,
+       print.figure = FALSE,
+       scales = "free",
+       space = "free"
+   )
+
+# Print the figure of differences between cancer and benign tumors.
+
+
+print( figure.output[[ "sample_typesample" ]] )
+print( figure.output[[ "sample_typeqc" ]] )
+
+
+
+
+
+# Compute the regression models.
+
+ANPCdf_wide <-
+   tidyr::pivot_wider(
+       data = ANPCdf_long[,-c(12,13)],
+       names_from = "Name",
+       values_from = "value"
+   )
+
+names.mapping <-
+   map_lipid_names( x = unique(ANPCdf_long$"Name"))
+
+result.limma <-
+   compute_models_with_limma(
+       x = ANPCdf_wide,
+       dependent.variables = names.mapping$"Name",
+       independent.variables = c("sample_type"),##EDIT THIS ON GROUPS WANTED
+       F.test = TRUE # Compute an F-test for a factor variable.
+   )
+
+# Compute the F-test.
+
+result.limma <-
+   compute_F_test_with_limma(
+       x = result.limma,
+       print.table = FALSE
+   )
+
+# Print a figure of the F-test.
+
+figure.output <-
+  heatmap_lipidome_from_limma(
+      x = result.limma,
+      names.mapping = names.mapping,
+      F.test = TRUE,
+      axis.x.carbons = FALSE,
+      class.facet = "wrap",
+      plot.all = FALSE,
+      plot.individual = TRUE,
+      scales = "free",
+      space = "free"
+  )
+
+# Compute pairwise post-hoc comparisons between the factor levels for
+# the dependent variables (i.e., lipids) with a significant F-test result.
+
+result.limma <-
+   compute_post_hoc_test_with_limma(
+       x = result.limma,
+       remap.level.names = TRUE
+   )
+
+
+# Print a figure of all post-hoc comparisons.
+
+figure.output <-
+    heatmap_lipidome_from_limma(
+    x = result.limma$"result.post.hoc.test",
+    names.mapping = names.mapping,
+    axis.x.carbons = FALSE,
+    plot.all = TRUE,
+    plot.individual = FALSE,
+    scales = "free",
+    space = "free"
+)
+
+
+# Specify the contrasts of the post-hoc comparison that will be included
+# in the figure.
+
+contrasts.included <-
+   c( "DiagnosisSteatosis", "DiagnosisNASH", "DiagnosisCirrhosis" )
+
+# Get the omitted contrasts based on the above definition.
+
+contrasts.omitted <-
+   colnames( result.limma$"result.post.hoc.test"$"p.value" )[
+       !(
+           colnames( result.limma$"result.post.hoc.test"$"p.value" ) %in%
+           contrasts.included
+       )
+   ]
+
+# Find dependent variables (i.e., lipids) that have any significant
+# difference.
+
+has.any.significant <-
+   apply(
+       X =
+           result.limma$"result.post.hoc.test"$"p.value"[
+               ,
+               contrasts.included
+           ],
+       MAR = 2,
+       FUN = p.adjust,
+       method = "BH"
+   )
+
+has.any.significant <-
+   rownames(
+       has.any.significant[
+           apply(
+               X = has.any.significant < 0.05,
+               MAR = 1,
+               FUN = any
+           ),
+       ]
+   )
+
+# Include in the figure only lipid classes that have at least four
+# significant differences.
+
+classes.included <-
+   names(
+       which(
+           table(
+               names.mapping[
+                   make.names( has.any.significant ), "Class"
+               ]
+           ) > 3
+       )
+   )
+
+classes.omitted <- unique( names.mapping$"Class" )
+classes.omitted <-
+   classes.omitted[ !( classes.omitted ) %in% classes.included ]
+
+# Print a figure of the selected post-hoc-comparisons.
+
+figure.output <-
+   heatmap_lipidome_from_limma(
+       x = result.limma$"result.post.hoc.test",
+       names.mapping = names.mapping,
+       axis.x.carbons = FALSE,
+       omit.class = classes.omitted,
+       omit.factor = contrasts.omitted,
+       plot.all = TRUE,
+       plot.individual = FALSE,
+       scales = "free",
+       space = "free"
+   )
+
+```
